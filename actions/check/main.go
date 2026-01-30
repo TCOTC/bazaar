@@ -46,6 +46,8 @@ import (
 
 var (
 	PR_REPO_PATH                  = os.Getenv("PR_REPO_PATH")                  // PR 仓库目录路径
+	BASE_REPO_PATH                = os.Getenv("BASE_REPO_PATH")                // Base 分支仓库目录路径（PR 的 base commit）
+	MAIN_REPO_PATH                = os.Getenv("MAIN_REPO_PATH")                // Main 分支仓库目录路径（main 的最新状态）
 	GITHUB_TOKEN                  = os.Getenv("PAT")                           // GitHub Token
 	FILE_PATH_CHECK_RESULT_OUTPUT = os.Getenv("FILE_PATH_CHECK_RESULT_OUTPUT") // 检查结果输出文件路径
 
@@ -91,11 +93,18 @@ func main() {
 	wg := &sync.WaitGroup{}
 	wg.Add(5)
 
-	go checkRepos(PR_REPO_PATH+"/icons.json", "./stage/icons.json", icons, checkResult, wg)
-	go checkRepos(PR_REPO_PATH+"/plugins.json", "./stage/plugins.json", plugins, checkResult, wg)
-	go checkRepos(PR_REPO_PATH+"/templates.json", "./stage/templates.json", templates, checkResult, wg)
-	go checkRepos(PR_REPO_PATH+"/themes.json", "./stage/themes.json", themes, checkResult, wg)
-	go checkRepos(PR_REPO_PATH+"/widgets.json", "./stage/widgets.json", widgets, checkResult, wg)
+	// 使用 base 分支的文件进行比较，以准确识别 PR 中新增的资源
+	// 同时保留 stage 文件用于 name 唯一性检查（因为 stage 文件包含了所有已合并的资源）
+	baseRepoPath := BASE_REPO_PATH
+	if baseRepoPath == "" {
+		// 如果未设置 BASE_REPO_PATH，则回退到使用 stage 文件（向后兼容）
+		baseRepoPath = "."
+	}
+	go checkRepos(PR_REPO_PATH+"/icons.json", baseRepoPath+"/icons.json", "./stage/icons.json", icons, checkResult, wg)
+	go checkRepos(PR_REPO_PATH+"/plugins.json", baseRepoPath+"/plugins.json", "./stage/plugins.json", plugins, checkResult, wg)
+	go checkRepos(PR_REPO_PATH+"/templates.json", baseRepoPath+"/templates.json", "./stage/templates.json", templates, checkResult, wg)
+	go checkRepos(PR_REPO_PATH+"/themes.json", baseRepoPath+"/themes.json", "./stage/themes.json", themes, checkResult, wg)
+	go checkRepos(PR_REPO_PATH+"/widgets.json", baseRepoPath+"/widgets.json", "./stage/widgets.json", widgets, checkResult, wg)
 
 	wg.Wait() // 等待所有检查完成
 
@@ -108,7 +117,8 @@ func main() {
 // checkRepos 检查集市资源仓库列表
 func checkRepos(
 	targetFilePath string,
-	originFilePath string,
+	baseFilePath string,
+	stageFilePath string,
 	resourceType ResourceType,
 	checkResult *CheckResult,
 	waitGroup *sync.WaitGroup,
@@ -128,43 +138,66 @@ func checkRepos(
 		panic(err)
 	}
 
-	// 读取 stage 中的文件
-	originFile, err := os.ReadFile(originFilePath)
+	// 读取 base 分支中的文件（用于比较新增的仓库）
+	baseFile, err := os.ReadFile(baseFilePath)
 	if nil != err {
-		logger.Fatalf("read file <\033[7m%s\033[0m> failed: %s", originFilePath, err)
+		logger.Fatalf("read file <\033[7m%s\033[0m> failed: %s", baseFilePath, err)
 		panic(err)
 	}
-	origin := map[string]interface{}{}
-	if err = gulu.JSON.UnmarshalJSON(originFile, &origin); nil != err {
-		logger.Fatalf("unmarshal file <\033[7m%s\033[0m> failed: %s", originFilePath, err)
+	base := map[string]interface{}{}
+	if err = gulu.JSON.UnmarshalJSON(baseFile, &base); nil != err {
+		logger.Fatalf("unmarshal file <\033[7m%s\033[0m> failed: %s", baseFilePath, err)
 		panic(err)
 	}
 
-	// 获取新增的仓库列表
-	targetRepos := target["repos"].([]interface{})     // PR 中的仓库列表
-	originRepos := origin["repos"].([]interface{})     // stage 中的仓库列表
-	originRepoSet := make(StringSet, len(originRepos)) // stage 中的仓库 owner/name 集合
-	originNameSet := make(StringSet, len(originRepos)) // stage 中的 name 字段集合
-	for _, originRepo := range originRepos {
-		originUrl := originRepo.(map[string]interface{})["url"].(string)
-		originUrl = strings.Split(originUrl, "@")[0]
-		originRepoSet[originUrl] = nil
-
-		originPackage := originRepo.(map[string]interface{})["package"]
-		if originPackage != nil {
-			originPackageName := originPackage.(map[string]interface{})["name"]
-			if originPackageName != nil {
-				originName := originPackageName.(string)
-				originNameSet[originName] = nil
-			}
-		}
+	// 读取 stage 中的文件（用于 name 唯一性检查，因为 stage 文件包含了所有已合并的资源）
+	stageFile, err := os.ReadFile(stageFilePath)
+	if nil != err {
+		logger.Fatalf("read file <\033[7m%s\033[0m> failed: %s", stageFilePath, err)
+		panic(err)
+	}
+	stage := map[string]interface{}{}
+	if err = gulu.JSON.UnmarshalJSON(stageFile, &stage); nil != err {
+		logger.Fatalf("unmarshal file <\033[7m%s\033[0m> failed: %s", stageFilePath, err)
+		panic(err)
 	}
 
-	newRepos := []string{} // 新增的仓库列表
-	for _, targetRepo := range targetRepos {
-		targetRepoPath := targetRepo.(string)
-		if !isKeyInSet(targetRepoPath, originRepoSet) {
-			newRepos = append(newRepos, targetRepoPath)
+	// 使用 git diff 获取 PR 中真正新增的仓库（而不是简单比较两个文件的完整内容）
+	// 这样可以避免在解决冲突后，误将已合并到 main 的仓库识别为新增
+	baseRepoPath := BASE_REPO_PATH
+	if baseRepoPath == "" {
+		// 如果未设置 BASE_REPO_PATH，则回退到文件比较方式
+		baseRepoPath = "."
+	}
+	newRepos := getNewReposFromGitDiff(PR_REPO_PATH, baseRepoPath, targetFilePath)
+
+	// 构建 name 字段集合（用于唯一性检查）
+	// 从 main 分支的 plugins.json 中提取 repo 名称（从 owner/repo 格式中截取 repo 部分）
+	mainRepoPath := MAIN_REPO_PATH
+	if mainRepoPath == "" {
+		logger.Fatalf("MAIN_REPO_PATH environment variable is not set")
+		panic("MAIN_REPO_PATH environment variable is not set")
+	}
+	mainFilePath := mainRepoPath + "/" + getFileNameFromPath(targetFilePath)
+	mainFile, err := os.ReadFile(mainFilePath)
+	if err != nil {
+		logger.Fatalf("read main branch file <\033[7m%s\033[0m> failed: %s", mainFilePath, err)
+		panic(err)
+	}
+	main := map[string]interface{}{}
+	if err = gulu.JSON.UnmarshalJSON(mainFile, &main); err != nil {
+		logger.Fatalf("unmarshal main branch file <\033[7m%s\033[0m> failed: %s", mainFilePath, err)
+		panic(err)
+	}
+	mainRepos := main["repos"].([]interface{})
+	nameSet := make(StringSet, len(mainRepos)) // name 字段集合
+	for _, mainRepo := range mainRepos {
+		mainRepoPath := mainRepo.(string) // 格式：owner/repo
+		// 从 owner/repo 中截取 repo 部分作为 name
+		parts := strings.Split(mainRepoPath, "/")
+		if len(parts) == 2 {
+			repoName := parts[1]
+			nameSet[repoName] = nil
 		}
 	}
 
@@ -196,7 +229,7 @@ func checkRepos(
 
 	for _, new_repo := range newRepos {
 		waitGroupCheck.Add(1)
-		go checkRepo(new_repo, originNameSet, resourceType, resultChannel, waitGroupCheck) // 检查每个仓库
+		go checkRepo(new_repo, nameSet, resourceType, resultChannel, waitGroupCheck) // 检查每个仓库
 	}
 	waitGroupCheck.Wait()  // 等待检查完成
 	close(resultChannel)   // 关闭检查结果输出通道
