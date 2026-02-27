@@ -9,27 +9,39 @@
 // See the Mulan PSL v2 for more details.
 
 /**
- * 使用 TypeScript Compiler API 检查 SiYuan 插件类是否实现了 onload 方法。
+ * 使用 TypeScript Compiler API 分析整个插件项目，检查插件类是否实现了 onload 方法。
+ * 通过 ts.createProgram() 解析完整的 TypeScript 项目（包括跨文件的 import），
+ * 可以准确定位 onload 方法所在的源文件、行、列。
  *
- * 用法: node analyze.mjs <filename>
- *   <filename>  文件名（仅用于判断 JS/TS 脚本类型），文件内容从 stdin 读入。
+ * 用法: node analyze.mjs <dir> <entry_file>
+ *   <dir>         浅克隆后的仓库根目录（绝对路径）
+ *   <entry_file>  入口文件相对路径（从 tsconfig/package.json 解析得到），用作无 tsconfig 时的回退
  *
  * 输出（JSON，写入 stdout）：
- *   { "has_onload": boolean, "pass": boolean, "onload_line": number, "onload_column": number }
+ *   { "has_onload": true, "pass": true, "onload_file": "src/index.ts", "onload_line": 10, "onload_column": 3 }
+ *   { "has_onload": false, "pass": false }
  *   或在出错时：
  *   { "error": string, "has_onload": false, "pass": false }
  */
 
 import ts from 'typescript';
+import path from 'path';
+import fs from 'fs';
 
-const filename = process.argv[2] || 'index.js';
+const dir = process.argv[2];
+const entryFile = process.argv[3] || 'index.js';
+
+if (!dir) {
+    process.stdout.write(JSON.stringify({ error: 'missing <dir> argument', has_onload: false, pass: false }));
+    process.exit(1);
+}
 
 // ---------------------------------------------------------------------------
 // onload 检测
 // ---------------------------------------------------------------------------
 
 /**
- * 递归遍历 TypeScript AST，查找名为 onload 的方法声明（支持 JS/TS）。
+ * 递归遍历 TypeScript AST，查找名为 onload 的方法声明。
  * 返回 { line, column }（1-based）或 null（未找到）。
  * @param {ts.Node} node
  * @param {ts.SourceFile} sourceFile
@@ -51,40 +63,61 @@ function findOnloadMethod(node, sourceFile) {
 }
 
 // ---------------------------------------------------------------------------
-// 主流程：从 stdin 读入文件内容，解析并检测
+// 构建 TypeScript 程序
 // ---------------------------------------------------------------------------
 
-let source = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { source += chunk; });
-process.stdin.on('error', (err) => {
-    process.stdout.write(JSON.stringify({ error: err.message, has_onload: false, pass: false }));
-    process.exit(1);
-});
-process.stdin.on('end', () => {
-    try {
-        const scriptKind = /\.(ts|tsx|mts|cts)$/.test(filename) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
-        const sourceFile = ts.createSourceFile(
-            filename,
-            source,
-            ts.ScriptTarget.Latest,
-            /* setParentNodes */ true,
-            scriptKind,
-        );
+try {
+    let fileNames;
+    let compilerOptions = {
+        target: ts.ScriptTarget.Latest,
+        allowJs: true,
+        noEmit: true,
+        skipLibCheck: true,
+    };
+
+    const tsConfigPath = path.join(dir, 'tsconfig.json');
+    if (fs.existsSync(tsConfigPath)) {
+        const configFile = ts.readConfigFile(tsConfigPath, ts.sys.readFile);
+        if (!configFile.error) {
+            const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, dir);
+            if (parsed.fileNames.length > 0) {
+                fileNames = parsed.fileNames;
+                compilerOptions = { ...compilerOptions, ...parsed.options };
+            }
+        }
+    }
+
+    if (!fileNames || fileNames.length === 0) {
+        // 回退：仅分析入口文件
+        fileNames = [path.resolve(dir, entryFile)];
+    }
+
+    const program = ts.createProgram(fileNames, compilerOptions);
+
+    // ---------------------------------------------------------------------------
+    // 遍历所有源文件（跳过声明文件和 node_modules）
+    // ---------------------------------------------------------------------------
+    for (const sourceFile of program.getSourceFiles()) {
+        if (sourceFile.isDeclarationFile) continue;
+        const fn = sourceFile.fileName;
+        if (fn.split(/[\/\\]/).includes('node_modules')) continue;
 
         const location = findOnloadMethod(sourceFile, sourceFile);
         if (location) {
+            const relPath = path.relative(dir, fn).replace(/\\/g, '/');
             process.stdout.write(JSON.stringify({
                 has_onload: true,
                 pass: true,
+                onload_file: relPath,
                 onload_line: location.line,
                 onload_column: location.column,
             }));
-        } else {
-            process.stdout.write(JSON.stringify({ has_onload: false, pass: false }));
+            process.exit(0);
         }
-    } catch (err) {
-        process.stdout.write(JSON.stringify({ error: err.message, has_onload: false, pass: false }));
-        process.exit(1);
     }
-});
+
+    process.stdout.write(JSON.stringify({ has_onload: false, pass: false }));
+} catch (err) {
+    process.stdout.write(JSON.stringify({ error: err.message, has_onload: false, pass: false }));
+    process.exit(1);
+}

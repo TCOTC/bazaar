@@ -679,7 +679,7 @@ func checkRepo(
 				Attrs:    *attrsCheckResult,
 			}
 		case plugins:
-			pluginCodeAnalysis, codeErr := checkPluginCode(repoOwner, repoName, releaseCheckResult.LatestRelease.Hash)
+			pluginCodeAnalysis, codeErr := checkPluginCode(repoOwner, repoName, releaseCheckResult.LatestRelease.Tag)
 			if codeErr != nil {
 				logger.Warnf("check repo [%s] plugin code failed: %s", repoPath, codeErr)
 				pluginCodeAnalysis = &PluginCodeAnalysis{}

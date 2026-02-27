@@ -70,7 +70,7 @@ type PluginFiles struct {
 type PluginCodeAnalysis struct {
 	Pass         bool   `json:"pass"`                    // 代码静态分析是否通过
 	HasOnload    bool   `json:"has_onload"`              // 插件类是否有 onload 方法
-	EntryFile    string `json:"entry_file"`              // 实际分析的入口文件路径
+	EntryFile    string `json:"entry_file"`              // onload 方法所在文件（若未找到则为解析得到的入口文件）
 	OnloadLine   int    `json:"onload_line,omitempty"`   // onload 方法所在行号（1-based，仅 HasOnload 为 true 时有值）
 	OnloadColumn int    `json:"onload_column,omitempty"` // onload 方法所在列号（1-based，仅 HasOnload 为 true 时有值）
 }
