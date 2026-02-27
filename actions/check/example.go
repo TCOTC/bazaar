@@ -184,7 +184,6 @@ var CheckResultTestExample = CheckResult{
 			CodeAnalysis: PluginCodeAnalysis{
 				Pass:      true,
 				HasOnload: true,
-				EntryFile: "src/index.ts",
 			},
 		},
 		{
@@ -239,7 +238,6 @@ var CheckResultTestExample = CheckResult{
 			CodeAnalysis: PluginCodeAnalysis{
 				Pass:      false,
 				HasOnload: false,
-				EntryFile: "index.js",
 			},
 		},
 	},

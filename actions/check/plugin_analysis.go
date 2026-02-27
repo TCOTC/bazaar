@@ -11,14 +11,19 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/parnurzeal/gorequest"
+	"github.com/siyuan-note/bazaar/actions/util"
 )
 
-// checkPluginCode 调用 Node.js 分析脚本，通过 TypeScript Compiler API 检查插件类是否实现了 onload 方法。
-// 入口文件路径从插件仓库的编译配置 (tsconfig.json / package.json) 中解析，无法确定时回退为 index.js。
+// checkPluginCode 下载发行版 index.js，通过 TypeScript Compiler API（Node.js）检查插件类是否实现了 onload 方法。
+// SiYuan 要求插件发行包中必须包含编译打包后的 index.js，该文件是自包含的，可直接进行静态分析。
 func checkPluginCode(
 	repoOwner string,
 	repoName string,
@@ -26,8 +31,28 @@ func checkPluginCode(
 ) (codeAnalysis *PluginCodeAnalysis, err error) {
 	codeAnalysis = &PluginCodeAnalysis{}
 
+	// 下载发行版 index.js（SiYuan 要求所有插件发行包必须包含该文件）
+	rawUrl := buildFileRawURL(repoOwner, repoName, hash, FILE_PATH_INDEX_JS)
+	response, data, errs := gorequest.
+		New().
+		Get(rawUrl).
+		Set("User-Agent", util.UserAgent).
+		Retry(REQUEST_RETRY_COUNT, REQUEST_RETRY_DURATION).
+		Timeout(REQUEST_TIMEOUT).
+		EndBytes()
+	if nil != errs {
+		err = fmt.Errorf("HTTP GET request [%s] failed: %s", rawUrl, errs)
+		return
+	}
+	if response.StatusCode != http.StatusOK {
+		err = fmt.Errorf("HTTP GET request [%s] failed: %s", rawUrl, response.Status)
+		return
+	}
+
+	// 调用 Node.js 脚本解析 index.js，将文件内容通过 stdin 传入
 	scriptPath := filepath.Join("actions", "check", "plugin-analyzer", "analyze.mjs")
-	cmd := exec.Command("node", scriptPath, repoOwner, repoName, hash)
+	cmd := exec.Command("node", scriptPath, FILE_PATH_INDEX_JS)
+	cmd.Stdin = bytes.NewReader(data)
 	output, cmdErr := cmd.Output()
 	if cmdErr != nil {
 		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
@@ -41,28 +66,24 @@ func checkPluginCode(
 		}
 	}
 
-	var result struct {
-		EntryFile string `json:"entryFile"`
-		HasOnload bool   `json:"hasOnload"`
-		Pass      bool   `json:"pass"`
-		Error     string `json:"error"`
+	// 解析脚本输出；脚本输出的 JSON 字段名与 PluginCodeAnalysis 的 tag 一致，直接反序列化
+	var scriptOutput struct {
+		*PluginCodeAnalysis
+		Error string `json:"error"`
 	}
-	if jsonErr := json.Unmarshal(output, &result); jsonErr != nil {
+	scriptOutput.PluginCodeAnalysis = codeAnalysis
+	if jsonErr := json.Unmarshal(output, &scriptOutput); jsonErr != nil {
 		if err == nil {
 			err = fmt.Errorf("parse plugin analyzer output for repo [%s/%s] failed: %s", repoOwner, repoName, jsonErr)
 		}
 		return
 	}
 
-	if result.Error != "" {
+	if scriptOutput.Error != "" {
 		if err == nil {
-			err = fmt.Errorf("plugin analyzer for repo [%s/%s] reported error: %s", repoOwner, repoName, result.Error)
+			err = fmt.Errorf("plugin analyzer for repo [%s/%s] reported error: %s", repoOwner, repoName, scriptOutput.Error)
 		}
 	}
-
-	codeAnalysis.EntryFile = result.EntryFile
-	codeAnalysis.HasOnload = result.HasOnload
-	codeAnalysis.Pass = result.Pass
 
 	return
 }
