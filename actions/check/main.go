@@ -564,13 +564,25 @@ func checkRepo(
 					logger.Warn(err.Error())
 				}
 
+				indexJsCheckResult, err := checkFileExist(
+					repoOwner,
+					repoName,
+					releaseCheckResult.LatestRelease.Hash,
+					FILE_PATH_INDEX_JS,
+				)
+				if err != nil {
+					logger.Warn(err.Error())
+				}
+
 				filesCheckResult = &PluginFiles{
 					Pass: pluginJsonCheckResult.Pass &&
+						indexJsCheckResult.Pass &&
 						iconPngCheckResult.Pass &&
 						previewPngCheckResult.Pass &&
 						readmeMdCheckResult.Pass,
 
 					PluginJson: *pluginJsonCheckResult,
+					IndexJs:    *indexJsCheckResult,
 
 					IconPng:    *iconPngCheckResult,
 					PreviewPng: *previewPngCheckResult,
@@ -667,11 +679,17 @@ func checkRepo(
 				Attrs:    *attrsCheckResult,
 			}
 		case plugins:
+			pluginCodeAnalysis, codeErr := checkPluginCode(repoOwner, repoName, releaseCheckResult.LatestRelease.Tag)
+			if codeErr != nil {
+				logger.Warnf("check repo [%s] plugin code failed: %s", repoPath, codeErr)
+				pluginCodeAnalysis = &PluginCodeAnalysis{}
+			}
 			resultChannel <- &Plugin{
-				RepoInfo: *repoInfo,
-				Release:  *releaseCheckResult,
-				Files:    *filesCheckResult.(*PluginFiles),
-				Attrs:    *attrsCheckResult,
+				RepoInfo:     *repoInfo,
+				Release:      *releaseCheckResult,
+				Files:        *filesCheckResult.(*PluginFiles),
+				Attrs:        *attrsCheckResult,
+				CodeAnalysis: *pluginCodeAnalysis,
 			}
 		case templates:
 			resultChannel <- &Template{

@@ -146,6 +146,10 @@ var CheckResultTestExample = CheckResult{
 					Pass: true,
 					URL:  "https://github.com/siyuan-note/plugin-sample/blob/979f77bbeec0bc9d123305a7e18d1936ae67b009/plugin.json",
 				},
+				IndexJs: File{
+					Pass: true,
+					URL:  "https://github.com/siyuan-note/plugin-sample/blob/979f77bbeec0bc9d123305a7e18d1936ae67b009/index.js",
+				},
 				PreviewPng: File{
 					Pass: true,
 					URL:  "https://github.com/siyuan-note/plugin-sample/blob/979f77bbeec0bc9d123305a7e18d1936ae67b009/preview.png",
@@ -177,6 +181,13 @@ var CheckResultTestExample = CheckResult{
 					Value: "https://github.com/siyuan-note/plugin-sample",
 				},
 			},
+			CodeAnalysis: PluginCodeAnalysis{
+				Pass:         true,
+				HasOnload:    true,
+				EntryFile:    "src/index.ts",
+				OnloadLine:   10,
+				OnloadColumn: 2,
+			},
 		},
 		{
 			RepoInfo: RepoInfo{
@@ -198,6 +209,9 @@ var CheckResultTestExample = CheckResult{
 					Pass: false,
 				},
 				PluginJson: File{
+					Pass: false,
+				},
+				IndexJs: File{
 					Pass: false,
 				},
 				PreviewPng: File{
@@ -223,6 +237,11 @@ var CheckResultTestExample = CheckResult{
 				URL: Attr{
 					Pass: false,
 				},
+			},
+			CodeAnalysis: PluginCodeAnalysis{
+				Pass:      false,
+				HasOnload: false,
+				EntryFile: "index.js",
 			},
 		},
 	},

@@ -45,6 +45,7 @@
   - {{ if $repo.Release.LatestRelease.PackageZip.Pass }}[x] [package.zip]({{ $repo.Release.LatestRelease.PackageZip.URL }}){{ else }}[ ] `package.zip`{{ end }}
 - {{ if $repo.Files.Pass }}[x]{{ else }}[ ]{{ end }} Files that must exist
   - {{ if $repo.Files.PluginJson.Pass }}[x] [plugin.json]({{ $repo.Files.PluginJson.URL }}){{ else }}[ ] `plugin.json`{{ end }}
+  - {{ if $repo.Files.IndexJs.Pass }}[x] [index.js]({{ $repo.Files.IndexJs.URL }}){{ else }}[ ] `index.js`{{ end }}
   - {{ if $repo.Files.IconPng.Pass }}[x] [icon.png]({{ $repo.Files.IconPng.URL }}){{ else }}[ ] `icon.png`{{ end }}
   - {{ if $repo.Files.PreviewPng.Pass }}[x] [preview.png]({{ $repo.Files.PreviewPng.URL }}){{ else }}[ ] `preview.png`{{ end }}
   - {{ if $repo.Files.ReadmeMd.Pass }}[x] [README.md]({{ $repo.Files.ReadmeMd.URL }}){{ else }}[ ] `README.md`{{ end }}
@@ -56,6 +57,8 @@
   - {{ if $repo.Attrs.Version.Pass }}[x] `version`: `{{ $repo.Attrs.Version.Value }}`{{ else }}[ ] `version`{{ end }}
   - {{ if $repo.Attrs.Author.Pass }}[x] `author`: `{{ $repo.Attrs.Author.Value }}`{{ else }}[ ] `author`{{ end }}
   - {{ if $repo.Attrs.URL.Pass }}[x] `url`: [{{ $repo.Attrs.URL.Value }}]({{ $repo.Attrs.URL.Value }}){{ else }}[ ] `url`{{ end }}
+- {{ if $repo.CodeAnalysis.Pass }}[x]{{ else }}[ ]{{ end }} Static code analysis{{ if $repo.CodeAnalysis.EntryFile }} of `{{ $repo.CodeAnalysis.EntryFile }}`{{ end }}
+  - {{ if $repo.CodeAnalysis.HasOnload }}[x]{{ else }}[ ]{{ end }} Plugin class has `onload` method{{ if $repo.CodeAnalysis.OnloadLine }} (line {{ $repo.CodeAnalysis.OnloadLine }}){{ end }}
 
 ---
 {{ end }}

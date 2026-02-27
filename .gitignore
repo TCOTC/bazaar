@@ -4,3 +4,5 @@
 
 pr-repo/
 templates/*.md
+actions/check/plugin-analyzer/node_modules/
+actions/check/plugin-analyzer/package-lock.json

@@ -77,6 +77,14 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install plugin analyzer dependencies
+        run: npm install --prefix actions/check/plugin-analyzer
+
       - name: Go Check
         run: go run ./actions/check
 
