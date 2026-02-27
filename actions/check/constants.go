@@ -33,6 +33,9 @@ const (
 	FILE_PATH_TEMPLATE_JSON = "template.json"
 	FILE_PATH_THEME_JSON    = "theme.json"
 	FILE_PATH_WIDGET_JSON   = "widget.json"
+
+	// 插件入口文件
+	FILE_PATH_INDEX_JS = "index.js"
 )
 
 var (

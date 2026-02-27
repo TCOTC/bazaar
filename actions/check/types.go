@@ -48,20 +48,28 @@ type IconFiles struct {
 
 // Plugin 插件
 type Plugin struct {
-	RepoInfo          RepoInfo    `json:"repo"`               // 仓库
-	Release           Release     `json:"release"`            // 发行版
-	Files             PluginFiles `json:"files"`              // 文件
-	Attrs             Attrs       `json:"attrs"`              // 属性
-	MaintainerChanged bool        `json:"maintainer_changed"` // 更换了维护者
+	RepoInfo          RepoInfo            `json:"repo"`               // 仓库
+	Release           Release             `json:"release"`            // 发行版
+	Files             PluginFiles         `json:"files"`              // 文件
+	Attrs             Attrs               `json:"attrs"`              // 属性
+	CodeAnalysis      PluginCodeAnalysis  `json:"code_analysis"`      // 代码静态分析
+	MaintainerChanged bool                `json:"maintainer_changed"` // 更换了维护者
 }
 
 type PluginFiles struct {
 	Pass bool `json:"pass"`
 
 	PluginJson File `json:"plugin.json"`
+	IndexJs    File `json:"index.js"`
 	IconPng    File `json:"icon.png"`
 	PreviewPng File `json:"preview.png"`
 	ReadmeMd   File `json:"README.md"`
+}
+
+// PluginCodeAnalysis 插件代码静态分析结果
+type PluginCodeAnalysis struct {
+	Pass      bool `json:"pass"`       // 代码静态分析是否通过
+	HasOnload bool `json:"has_onload"` // 插件类是否有 onload 方法
 }
 
 // Template 模板
