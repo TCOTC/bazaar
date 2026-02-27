@@ -141,9 +141,8 @@ return pkg.Main
 return FILE_PATH_INDEX_JS
 }
 
-// checkPluginCode 在插件仓库目录中通过 TypeScript Compiler API（Node.js）分析全部源码，
+// checkPluginCode 浅克隆插件仓库，通过 TypeScript Compiler API（Node.js）分析全部源码，
 // 检查插件类是否实现了 onload 方法，并返回方法所在的文件、行、列信息。
-// 若工作流已通过 PLUGIN_CLONE_BASE_DIR 预克隆仓库，则直接使用该目录；否则自行浅克隆。
 func checkPluginCode(
 repoOwner string,
 repoName string,
@@ -151,32 +150,19 @@ tag string,
 ) (codeAnalysis *PluginCodeAnalysis, err error) {
 codeAnalysis = &PluginCodeAnalysis{}
 
-// 验证 tag 格式（无论由工作流预克隆还是本地克隆，均进行校验）
+// 验证 tag 格式，防止传入异常值
 if !isValidGitRef(tag) {
 err = fmt.Errorf("invalid tag [%s] for repo [%s/%s]", tag, repoOwner, repoName)
 return
 }
 
-var tmpDir string
-
-// 优先使用工作流预克隆的目录（由 actions 步骤提供，避免在 Go 中执行 git）
-// 预克隆目录的生命周期由工作流管理，无需在此处清理。
-if cloneBase := os.Getenv("PLUGIN_CLONE_BASE_DIR"); cloneBase != "" {
-preCloned := filepath.Join(cloneBase, repoOwner, repoName)
-if _, statErr := os.Stat(preCloned); statErr == nil {
-tmpDir = preCloned
-}
-}
-
-if tmpDir == "" {
-// 回退：自行浅克隆（本地开发 / 未设置 PLUGIN_CLONE_BASE_DIR 时使用）
-tmpDir, err = clonePluginRepo(repoOwner, repoName, tag)
-if err != nil {
-err = fmt.Errorf("clone repo [%s/%s@%s] failed: %s", repoOwner, repoName, tag, err)
+// 浅克隆插件仓库（在 tag 处）
+tmpDir, cloneErr := clonePluginRepo(repoOwner, repoName, tag)
+if cloneErr != nil {
+err = fmt.Errorf("clone repo [%s/%s@%s] failed: %s", repoOwner, repoName, tag, cloneErr)
 return
 }
-defer os.RemoveAll(tmpDir) // 仅清理本地创建的临时目录
-}
+defer os.RemoveAll(tmpDir)
 
 // 从本地编译配置解析入口文件（用于无法找到 onload 时的回退显示）
 entryFile := resolveEntryFileLocal(tmpDir)
