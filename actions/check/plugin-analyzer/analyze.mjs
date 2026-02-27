@@ -15,7 +15,7 @@
  *   <filename>  文件名（仅用于判断 JS/TS 脚本类型），文件内容从 stdin 读入。
  *
  * 输出（JSON，写入 stdout）：
- *   { "has_onload": boolean, "pass": boolean }
+ *   { "has_onload": boolean, "pass": boolean, "onload_line": number, "onload_column": number }
  *   或在出错时：
  *   { "error": string, "has_onload": false, "pass": false }
  */
@@ -30,17 +30,24 @@ const filename = process.argv[2] || 'index.js';
 
 /**
  * 递归遍历 TypeScript AST，查找名为 onload 的方法声明（支持 JS/TS）。
+ * 返回 { line, column }（1-based）或 null（未找到）。
  * @param {ts.Node} node
- * @returns {boolean}
+ * @param {ts.SourceFile} sourceFile
+ * @returns {{ line: number, column: number } | null}
  */
-function hasOnloadMethod(node) {
+function findOnloadMethod(node, sourceFile) {
     if (ts.isMethodDeclaration(node)) {
         const name = node.name;
         if (ts.isIdentifier(name) && name.text === 'onload') {
-            return true;
+            const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+            return { line: line + 1, column: character + 1 };
         }
     }
-    return ts.forEachChild(node, hasOnloadMethod) === true;
+    let result = null;
+    ts.forEachChild(node, (child) => {
+        if (!result) result = findOnloadMethod(child, sourceFile);
+    });
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,8 +72,17 @@ process.stdin.on('end', () => {
             scriptKind,
         );
 
-        const hasOnload = hasOnloadMethod(sourceFile);
-        process.stdout.write(JSON.stringify({ has_onload: hasOnload, pass: hasOnload }));
+        const location = findOnloadMethod(sourceFile, sourceFile);
+        if (location) {
+            process.stdout.write(JSON.stringify({
+                has_onload: true,
+                pass: true,
+                onload_line: location.line,
+                onload_column: location.column,
+            }));
+        } else {
+            process.stdout.write(JSON.stringify({ has_onload: false, pass: false }));
+        }
     } catch (err) {
         process.stdout.write(JSON.stringify({ error: err.message, has_onload: false, pass: false }));
         process.exit(1);

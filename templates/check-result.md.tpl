@@ -57,8 +57,8 @@
   - {{ if $repo.Attrs.Version.Pass }}[x] `version`: `{{ $repo.Attrs.Version.Value }}`{{ else }}[ ] `version`{{ end }}
   - {{ if $repo.Attrs.Author.Pass }}[x] `author`: `{{ $repo.Attrs.Author.Value }}`{{ else }}[ ] `author`{{ end }}
   - {{ if $repo.Attrs.URL.Pass }}[x] `url`: [{{ $repo.Attrs.URL.Value }}]({{ $repo.Attrs.URL.Value }}){{ else }}[ ] `url`{{ end }}
-- {{ if $repo.CodeAnalysis.Pass }}[x]{{ else }}[ ]{{ end }} Static code analysis of `index.js`
-  - {{ if $repo.CodeAnalysis.HasOnload }}[x]{{ else }}[ ]{{ end }} Plugin class has `onload` method
+- {{ if $repo.CodeAnalysis.Pass }}[x]{{ else }}[ ]{{ end }} Static code analysis{{ if $repo.CodeAnalysis.EntryFile }} of `{{ $repo.CodeAnalysis.EntryFile }}`{{ end }}
+  - {{ if $repo.CodeAnalysis.HasOnload }}[x]{{ else }}[ ]{{ end }} Plugin class has `onload` method{{ if $repo.CodeAnalysis.OnloadLine }} (line {{ $repo.CodeAnalysis.OnloadLine }}){{ end }}
 
 ---
 {{ end }}
