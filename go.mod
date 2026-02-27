@@ -9,7 +9,6 @@ require (
 	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/parnurzeal/gorequest v0.3.0
 	github.com/qiniu/go-sdk/v7 v7.25.4
-	github.com/tdewolff/parse/v2 v2.8.8
 )
 
 require (

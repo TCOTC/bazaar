@@ -11,36 +11,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"net/http"
-
-	"github.com/parnurzeal/gorequest"
-	"github.com/siyuan-note/bazaar/actions/util"
-	"github.com/tdewolff/parse/v2"
-	"github.com/tdewolff/parse/v2/js"
+	"os/exec"
+	"path/filepath"
 )
 
-// onloadVisitor 通过 AST 遍历检查是否存在 onload 方法声明
-type onloadVisitor struct {
-	found bool
-}
-
-func (v *onloadVisitor) Enter(n js.INode) js.IVisitor {
-	if v.found {
-		return nil // 已找到，停止遍历
-	}
-	if method, ok := n.(*js.MethodDecl); ok {
-		if method.Name.IsIdent([]byte("onload")) {
-			v.found = true
-			return nil
-		}
-	}
-	return v
-}
-
-func (v *onloadVisitor) Exit(n js.INode) {}
-
-// checkPluginCode 下载插件 index.js 并通过 JS AST 解析检查插件类是否实现了 onload 方法
+// checkPluginCode 调用 Node.js 分析脚本，通过 TypeScript Compiler API 检查插件类是否实现了 onload 方法。
+// 入口文件路径从插件仓库的编译配置 (tsconfig.json / package.json) 中解析，无法确定时回退为 index.js。
 func checkPluginCode(
 	repoOwner string,
 	repoName string,
@@ -48,36 +26,44 @@ func checkPluginCode(
 ) (codeAnalysis *PluginCodeAnalysis, err error) {
 	codeAnalysis = &PluginCodeAnalysis{}
 
-	rawUrl := buildFileRawURL(repoOwner, repoName, hash, FILE_PATH_INDEX_JS)
-	response, data, errs := gorequest.
-		New().
-		Get(rawUrl).
-		Set("User-Agent", util.UserAgent).
-		Retry(REQUEST_RETRY_COUNT, REQUEST_RETRY_DURATION).
-		Timeout(REQUEST_TIMEOUT).
-		EndBytes()
-	if nil != errs {
-		err = fmt.Errorf("HTTP GET request [%s] failed: %s", rawUrl, errs)
-		return
+	scriptPath := filepath.Join("actions", "check", "plugin-analyzer", "analyze.mjs")
+	cmd := exec.Command("node", scriptPath, repoOwner, repoName, hash)
+	output, cmdErr := cmd.Output()
+	if cmdErr != nil {
+		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
+			err = fmt.Errorf("plugin analyzer for repo [%s/%s] failed: %s", repoOwner, repoName, string(exitErr.Stderr))
+		} else {
+			err = fmt.Errorf("plugin analyzer for repo [%s/%s] failed: %s", repoOwner, repoName, cmdErr)
+		}
+		// 即便脚本以非零码退出，stdout 中仍可能有 JSON 结果，尝试解析
+		if len(output) == 0 {
+			return
+		}
 	}
-	if response.StatusCode != http.StatusOK {
-		err = fmt.Errorf("HTTP GET request [%s] failed: %s", rawUrl, response.Status)
+
+	var result struct {
+		EntryFile string `json:"entryFile"`
+		HasOnload bool   `json:"hasOnload"`
+		Pass      bool   `json:"pass"`
+		Error     string `json:"error"`
+	}
+	if jsonErr := json.Unmarshal(output, &result); jsonErr != nil {
+		if err == nil {
+			err = fmt.Errorf("parse plugin analyzer output for repo [%s/%s] failed: %s", repoOwner, repoName, jsonErr)
+		}
 		return
 	}
 
-	// 解析 JS AST
-	ast, parseErr := js.Parse(parse.NewInputBytes(data), js.Options{})
-	if parseErr != nil {
-		err = fmt.Errorf("parse index.js for repo [%s/%s] failed: %s", repoOwner, repoName, parseErr)
-		return
+	if result.Error != "" {
+		if err == nil {
+			err = fmt.Errorf("plugin analyzer for repo [%s/%s] reported error: %s", repoOwner, repoName, result.Error)
+		}
 	}
 
-	// 遍历 AST，查找 onload 方法声明
-	v := &onloadVisitor{}
-	js.Walk(v, ast)
-
-	codeAnalysis.HasOnload = v.found
-	codeAnalysis.Pass = codeAnalysis.HasOnload
+	codeAnalysis.EntryFile = result.EntryFile
+	codeAnalysis.HasOnload = result.HasOnload
+	codeAnalysis.Pass = result.Pass
 
 	return
 }
+
